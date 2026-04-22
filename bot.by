@@ -1,0 +1,77 @@
+import logging
+import re
+import os
+from telegram import Update
+from telegram.ext import ApplicationBuilder, ContextTypes, MessageHandler, filters
+from telegram.constants import ParseMode
+
+logging.basicConfig(
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    level=logging.INFO
+)
+
+def extract_numbers(text):
+    if not text: return None
+    digits_only = re.sub(r'\D', '', text)
+    if len(digits_only) < 9: return None
+    if not (digits_only.startswith('0') or digits_only.startswith('9') or digits_only.startswith('7')):
+        return None
+    if digits_only.startswith('097'):
+        cleaned = digits_only[1:11]
+    else:
+        cleaned = digits_only[:11]
+    return cleaned
+
+def calculate_expression(text):
+    clean_text = text.replace(' ', '').strip()
+    if not any(op in clean_text for op in ['+', '-', '*', '/', '%']):
+        return None
+    try:
+        if '%' in clean_text:
+            match = re.match(r'(\d+(?:\.\d+)?)\s*([+\-*/])\s*(\d+(?:\.\d+)?)%', clean_text)
+            if match:
+                base_num, operator, percent_val = float(match.group(1)), match.group(2), float(match.group(3))
+                calc_percent = base_num * (percent_val / 100)
+                if operator == '+': result = base_num + calc_percent
+                elif operator == '-': result = base_num - calc_percent
+                elif operator == '*': result = base_num * calc_percent
+                elif operator == '/': result = base_num / calc_percent
+            else:
+                expr = clean_text.replace('%', '/100')
+                expr = re.sub(r'[^0-9+\-*/().]', '', expr)
+                result = eval(expr)
+            final_res = int(result) if result == int(result) else round(result, 2)
+            return f"Result: {final_res}"
+        else:
+            expr = re.sub(r'[^0-9+\-*/().]', '', clean_text)
+            result = eval(expr)
+            final_res = int(result) if result == int(result) else round(result, 2)
+            return f"{clean_text}={final_res}"
+    except:
+        return None
+
+async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_text = update.message.text or update.message.caption
+    if not user_text: return
+    
+    calc_result = calculate_expression(user_text)
+    if calc_result:
+        await update.message.reply_text(f"<code>{calc_result}</code>", parse_mode=ParseMode.HTML)
+        return
+
+    phone_result = extract_numbers(user_text)
+    if phone_result:
+        await update.message.reply_text(f"<code>{phone_result}</code>", parse_mode=ParseMode.HTML)
+
+if __name__ == '__main__':
+    # သင်ပေးထားသော Token အသစ်
+    BOT_TOKEN = "8205379374:AAE5_Roq9LDWkb_KNy6p9xAYJIzzY_kS-qQ"
+    
+    # Render တွင် Proxy မလိုသောကြောင့် တိုက်ရိုက်ချိတ်ဆက်သည်
+    app = ApplicationBuilder().token(BOT_TOKEN).build()
+    
+    app.add_handler(MessageHandler(filters.ALL, handle_message))
+    
+    print("Bot is starting on Render...")
+    app.run_polling(drop_pending_updates=True)
+    
